@@ -1,5 +1,4 @@
-
-# 🚨 Incident Report — Day 1
+# 🚨 Incident Report — Day 2
 
 ---
 
@@ -7,11 +6,11 @@
 
 | Field | Details |
 |-------|---------|
-| Incident ID | IR-2026-001 |
+| Incident ID | IR-2026-002 |
 | Date | March 22 2026 |
-| Time | 13:39 EDT |
+| Time | 22:27 - 22:52 EDT |
 | Analyst | Vanitha Challa |
-| Attack Type | Port Scanning (Reconnaissance) |
+| Attack Type | OS Fingerprinting (Reconnaissance) |
 | Severity | MEDIUM ⚠️ |
 | Status | RESOLVED ✅ |
 
@@ -19,14 +18,14 @@
 
 ## 📌 Incident Summary
 
-A port scan was detected against Windows 11 machine at **192.168.56.103**
-originating from **192.168.56.100** and **192.168.56.102** on March 22 2026
-between 13:37 and 13:50 EDT.
+OS fingerprinting activity was detected against Windows 11 machine at
+**192.168.56.103** originating from **192.168.56.102** on March 22 2026
+between 22:27 and 22:52 EDT.
 
-The attacker performed a full network reconnaissance including host discovery,
-port scanning, service detection, and aggressive fingerprinting. All 5 open
-ports were mapped and sensitive service information including Splunk SIEM
-running on default ports 8000 and 8089 was successfully identified.
+The attacker performed multiple OS detection techniques including
+service version detection, TTL analysis via ping, aggressive OS
+guessing, and full TCP/IP fingerprinting. The target OS was successfully
+identified as **Windows 10 1703 with 99% confidence**.
 
 ---
 
@@ -34,9 +33,8 @@ running on default ports 8000 and 8089 was successfully identified.
 
 | Role | IP Address | Hostname | OS |
 |------|------------|---------|-----|
-| Attacker 1 | 192.168.56.100 | Kali Linux | Kali Linux |
-| Attacker 2 | 192.168.56.102 | VirtualBox VM | Unknown |
-| Victim | 192.168.56.103 | DESKTOP-I5VGKR9 | Windows 11 Enterprise |
+| Attacker | 192.168.56.102 | Kali Linux | Kali Linux |
+| Victim | 192.168.56.103 | DESKTOP-I5VGKR9 | Windows 11 |
 
 ---
 
@@ -44,13 +42,14 @@ running on default ports 8000 and 8089 was successfully identified.
 
 | Time (EDT) | Activity |
 |------------|----------|
-| 13:37:00 | Host discovery scan started (nmap -sn) |
-| 13:37:27 | 4 hosts discovered including target 192.168.56.103 |
-| 13:39:00 | Basic port scan started (nmap) |
-| 13:39:14 | 5 open ports discovered in 14.43 seconds |
-| 13:50:00 | Full aggressive scan started (nmap -A) |
-| 13:50:53 | Complete service fingerprinting done in 53 seconds |
-| 13:51:00 | Splunk SIEM identified on ports 8000 and 8089 |
+| 22:27:00 | nmap -O -sV scan started |
+| 22:27:45 | OS identified as Windows (45.64 seconds) |
+| 22:30:00 | ping started for TTL analysis |
+| 22:30:01 | TTL=128 confirmed Windows immediately |
+| 22:46:00 | nmap --osscan-guess started |
+| 22:46:24 | Windows 10 1703 identified at 99% confidence |
+| 22:52:00 | nmap -A full fingerprinting started |
+| 22:52:54 | Complete OS profile obtained (54.17 seconds) |
 
 ---
 
@@ -58,105 +57,106 @@ running on default ports 8000 and 8089 was successfully identified.
 
 ### Method 1 — Raw Log Analysis (Manual)
 **Tool:** Windows Event Viewer
-**Event ID:** 5156 (Windows Filtering Platform Connection)
+**Event ID:** 5158
 
 **Raw evidence found manually:**
-- Event ID 5156 appearing 31,179+ times in Security log
-- Multiple events at exact timestamp: 3/22/2026 12:28:21 PM
-- Computer: DESKTOP-I5VGKR9
-- Process ID: 4536
-- Keywords: Audit Success
+```
+Security Log - 30,556 events
+Date: 3/22/2026 8:52:50 PM
+Event ID: 5158
+Description: Windows Filtering Platform
+             permitted bind to local port
+Computer: DESKTOP-I5VGKR9
+Process ID: 7316
+Keywords: Audit Success
+```
 
-**Pattern identified without tools:**
-- Same Event ID repeating at same second
-- Indicates automated rapid connection attempts
-- Sequential port targeting pattern visible
+**Manual analysis conclusion:**
+Rapid Event ID 5158 occurrences indicate automated
+port binding activity consistent with OS fingerprinting!
 
-**Manual Conclusion:** PORT SCAN DETECTED ✅
+**Manual Conclusion:** OS FINGERPRINTING DETECTED ✅
 
 ---
 
-### Method 2 — Wireshark Network Analysis
-**Tool:** Wireshark
-**Interface:** Ethernet 2 (VirtualBox Host-Only)
-**Filter:** tcp.flags.syn == 1
+### Method 2 — Wireshark Analysis
 
-**Raw packet evidence:**
+**Evidence 1 - TTL Filter:**
 ```
-Source          Destination     Protocol  Info
-192.168.56.102  192.168.56.103  TCP       33698→8200 [SYN]
-192.168.56.102  192.168.56.103  TCP       33698→5001 [SYN]
-192.168.56.102  192.168.56.103  TCP       33698→3351 [SYN]
-192.168.56.103  192.168.56.102  TCP       [RST, ACK] responses
+Filter: ip.ttl == 128
+Result: Windows host visible
+        "Host Announcement DESKTOP-I5"
+        TTL 128 packets confirmed!
 ```
 
-**Analysis:**
-- SYN packets sent to multiple ports rapidly
-- No complete TCP handshakes (RST responses)
-- This is the classic signature of a SYN port scan
-- Source IP 192.168.56.102 confirmed as attacker
+**Evidence 2 - ICMP Filter:**
+```
+Filter: icmp
+Source: 192.168.56.102 (Kali)
+Dest: 192.168.56.103 (Windows)
+Protocol: ICMP
+Info: Echo (ping) request/reply
 
-**Wireshark Conclusion:** SYN SCAN CONFIRMED ✅
+20 packets captured
+Confirms active ping fingerprinting!
+```
+
+**Evidence 3 - SYN Filter:**
+```
+Filter: tcp.flags.syn == 1
+Source: 192.168.56.102
+Ports: 111, 256, 143, 53, 8888,
+       22, 1723, 443, 23, 21...
+Pattern: Sequential TCP/IP fingerprinting!
+```
+
+**Wireshark Conclusion:** ALL 3 FINGERPRINTING METHODS CONFIRMED ✅
 
 ---
 
-### Method 3 — Splunk SIEM Analysis
-**Tool:** Splunk Enterprise 10.2.1
+### Method 3 — Splunk SIEM
 **Query:**
 ```
 index=* 192.168.56.100
 ```
-**Time Range:** Last 24 hours
 
 **Results:**
 ```
-12 events found
-Time: 03/22/2026 12:35:22 PM
-Network Information:
-  Direction: Inbound
-  Source Address: 192.168.56.100
+47 events found
+Time: 3/21/26 8:00PM to 3/22/26 8:53PM
+
+Event details:
+Source Address: 192.168.56.103
+Destination Address: 192.168.56.100
+host: DESKTOP-I5VGKR9
+source: WinEventLog:Security
 ```
 
-**Splunk Conclusion:** ATTACK SOURCE CONFIRMED ✅
+**Splunk Conclusion:** 47 SECURITY EVENTS CONFIRMED ✅
 
 ---
 
-## ⚠️ All 3 Detection Methods Agreed ✅
+## ⚠️ All 3 Methods Agreed ✅
 
 ```
-Raw Logs → PORT SCAN ✅
-Wireshark → PORT SCAN ✅
-Splunk   → PORT SCAN ✅
-
-Manual analysis confirmed BEFORE tools!
+Raw Logs (5158) → OS FINGERPRINTING ✅
+Wireshark ICMP  → OS FINGERPRINTING ✅
+Splunk 47 events → OS FINGERPRINTING ✅
 ```
 
 ---
 
-## 🔓 Open Ports Discovered
+## 🔓 Intelligence Gathered by Attacker
 
-| Port | State | Service | Version | Risk |
-|------|-------|---------|---------|------|
-| 135/tcp | Open | msrpc | Microsoft Windows RPC | Medium |
-| 139/tcp | Open | netbios-ssn | Microsoft Windows netbios-ssn | Medium ⚠️ |
-| 445/tcp | Open | microsoft-ds | Microsoft-DS | HIGH ⚠️ |
-| 8000/tcp | Open | http | **Splunkd httpd** | HIGH 🔴 |
-| 8089/tcp | Open | ssl/http | **Splunkd httpd SSL** | HIGH 🔴 |
-
----
-
-## 🔍 Additional Intelligence Gathered by Attacker
-
-| Information | Value | Risk |
-|------------|-------|------|
-| Computer Name | DESKTOP-I5VGKR9 | Identity exposed |
-| OS | Windows (CPE: microsoft:windows) | OS fingerprinted |
-| Splunk Login URL | http://192.168.56.103:8000 | SIEM accessible |
-| SSL Certificate | SplunkServerDefaultCert | Default cert used |
-| Cert Valid Until | 2029-03-10 | Certificate info exposed |
-| SMB Signing | Enabled and Required | SMB configured |
-| Network Distance | 1 hop | Direct network access |
-| Traceroute RTT | 1.57ms | Network mapping done |
+| Information | Value | Risk Level |
+|------------|-------|-----------|
+| OS Type | Windows | HIGH 🔴 |
+| OS Version | Windows 10 1703 | HIGH 🔴 |
+| Confidence | 99% | HIGH 🔴 |
+| TTL Value | 128 (Windows confirmed) | MEDIUM ⚠️ |
+| Computer Name | DESKTOP-I5VGKR9 | MEDIUM ⚠️ |
+| Services Running | Splunk, RPC, SMB, NetBIOS | HIGH 🔴 |
+| Network Distance | 1 hop (1.23ms) | LOW |
 
 ---
 
@@ -164,14 +164,12 @@ Manual analysis confirmed BEFORE tools!
 
 | IOC | Description | Severity |
 |-----|-------------|---------|
-| IP: 192.168.56.100 | Primary attack source | HIGH 🔴 |
-| IP: 192.168.56.102 | Secondary attack source | HIGH 🔴 |
-| 1000 ports in 14 sec | Automated scanning tool | HIGH 🔴 |
-| Sequential ports | Nmap tool signature | MEDIUM ⚠️ |
-| SYN without ACK | SYN scan technique | MEDIUM ⚠️ |
-| Port 8000 probed | SIEM targeted | HIGH 🔴 |
-| Splunk identified | SIEM tool exposed | HIGH 🔴 |
-| Computer name exposed | DESKTOP-I5VGKR9 | MEDIUM ⚠️ |
+| IP: 192.168.56.102 | Attack source | HIGH 🔴 |
+| TTL=128 in all packets | Windows OS fingerprint | MEDIUM ⚠️ |
+| ICMP echo flood | Ping-based fingerprinting | MEDIUM ⚠️ |
+| Event ID 5158 rapid | Port binding fingerprint | MEDIUM ⚠️ |
+| 99% OS confidence | Exact version identified | HIGH 🔴 |
+| TCP/IP fingerprint | Nmap signature detected | MEDIUM ⚠️ |
 
 ---
 
@@ -186,12 +184,11 @@ Reasoning:
 ✅ No data accessed
 
 BUT serious concerns:
-🔴 Splunk SIEM fully exposed
-🔴 Attacker knows monitoring exists
+🔴 OS version identified at 99%
+🔴 Attacker can find version-specific CVEs
+🔴 Complete OS profile obtained
 🔴 Computer name disclosed
-🔴 All services fingerprinted
-🔴 SMB port 445 open (ransomware risk!)
-🔴 Default Splunk certificate detected
+🔴 All services identified again
 ```
 
 ---
@@ -200,14 +197,13 @@ BUT serious concerns:
 
 | Priority | Action | Reason |
 |----------|--------|--------|
-| 🔴 HIGH | Block IPs 192.168.56.100 and .102 in firewall | Stop further attacks |
-| 🔴 HIGH | Move Splunk to non-standard port | Hide SIEM from attackers |
-| 🔴 HIGH | Change Splunk default SSL certificate | Remove tool fingerprint |
-| ⚠️ MEDIUM | Disable NetBIOS (port 139) if unused | Reduce attack surface |
-| ⚠️ MEDIUM | Restrict SMB (port 445) access | Prevent ransomware entry |
-| ⚠️ MEDIUM | Enable Windows Firewall | Block unauthorized scans |
-| 🟡 LOW | Monitor source IPs for follow-up attacks | Detect exploitation attempts |
-| 🟡 LOW | Set up Splunk alert for rapid port connections | Automated detection |
+| 🔴 HIGH | Keep Windows fully updated | Eliminate known CVEs |
+| 🔴 HIGH | Block ICMP at firewall | Prevent TTL fingerprinting |
+| 🔴 HIGH | Block source IP 192.168.56.102 | Stop further recon |
+| ⚠️ MEDIUM | Enable IDS rules for Nmap patterns | Detect future scans |
+| ⚠️ MEDIUM | Monitor Event ID 5158 spikes | Early warning system |
+| ⚠️ MEDIUM | Restrict SMB and NetBIOS | Reduce info disclosure |
+| 🟡 LOW | Consider OS obfuscation | Make fingerprinting harder |
 
 ---
 
@@ -215,36 +211,39 @@ BUT serious concerns:
 
 | Screenshot | Description | Tool |
 |------------|-------------|------|
-| 1-nmap-sn-discovery.png | 4 hosts found on network | Nmap |
-| 2-nmap-basic-scan.png | 5 open ports in 14 seconds | Nmap |
-| 3-wireshark-syn-filter.png | SYN packets from attacker | Wireshark |
-| 4-event-viewer-5156.png | Event ID 5156 raw logs | Event Viewer |
-| 5-splunk-search.png | Attack source in SIEM | Splunk |
-| 6-nmap-A-full-results.png | Complete service fingerprint | Nmap |
-| 7-splunk-exposed.png | Splunk detected by attacker | Nmap |
+| 01-nmap-O-wrong-command.png | Lowercase o mistake | Kali |
+| 02-nmap-O-sV-results.png | OS + service detection | Nmap |
+| 03-wireshark-ttl128-filter.png | TTL 128 Windows filter | Wireshark |
+| 04-wireshark-icmp-packets.png | ICMP ping captured | Wireshark |
+| 05-ping-ttl128-kali.png | TTL=128 in ping output | Kali |
+| 06-osscan-guess-99percent.png | 99% Windows 10 1703! | Nmap |
+| 07-nmap-A-results.png | Full fingerprint results | Nmap |
+| 08-nmap-A-computer-name.png | DESKTOP-I5VGKR9 exposed | Nmap |
+| 09-wireshark-syn-packets.png | TCP fingerprinting | Wireshark |
+| 10-eventviewer-5158.png | Raw Event 5158 logs | Event Viewer |
+| 11-splunk-47-events.png | 47 SIEM events | Splunk |
+| 12-splunk-source-address.png | Source address details | Splunk |
 
 ---
 
 ## 🏁 Conclusion
 
-A complete network reconnaissance was performed against Windows 11 host
-DESKTOP-I5VGKR9 at 192.168.56.103. The attacker successfully:
+A complete OS fingerprinting reconnaissance was performed against
+Windows 11 host DESKTOP-I5VGKR9 at 192.168.56.103.
 
-- Discovered all 4 hosts on the network
-- Mapped all 5 open ports in 14 seconds
-- Identified the Splunk SIEM tool running on default ports
-- Obtained the computer name and OS details
-- Gathered SSL certificate information
+The attacker successfully:
+- Confirmed Windows OS from TTL=128 via single ping
+- Identified Windows 10 version 1703 with **99% confidence**
+- Obtained complete TCP/IP fingerprint
+- Mapped all running services
+- Identified Splunk SIEM again on default ports
 
-The most critical finding is that **Splunk SIEM is visible on default
-ports 8000 and 8089**. This tells any attacker that monitoring is active
-and could lead to targeted attacks against the SIEM itself to delete logs
-and cover tracks.
+The most critical finding is the **99% confidence OS version
+identification**. This allows an attacker to search CVE databases
+for vulnerabilities specific to Windows 10 build 1703 and launch
+highly targeted exploits.
 
-No exploitation was confirmed. This was reconnaissance only. However,
-the information gathered provides a complete roadmap for further attacks.
-
-**Immediate action required** especially changing Splunk default ports!
+**Immediate action required**: Update Windows and block ICMP!
 
 ---
 
@@ -256,19 +255,19 @@ Status: RESOLVED ✅
 Actions Taken:
 - Full incident documented
 - All 3 detection methods confirmed
-- IOCs identified and listed
+- OS fingerprinting techniques identified
 - Recommendations provided
 
-Next Steps:
-- Monitor 192.168.56.100 and .102
-- Implement firewall rules
-- Change Splunk to custom port
-- Watch for Day 2 attack patterns
+Lessons Learned:
+- TTL=128 immediately reveals Windows
+- One ping = OS identified!
+- 99% confidence = targeted attack possible
+- Keeping OS updated is CRITICAL
 ```
 
 ---
 
-*Incident Report prepared by: Vanitha Challa*
+*Report by: Vanitha Challa*
 *Date: March 22 2026*
-*Part of 30 Day SOC Challenge*
+*30 Day SOC Challenge — Day 2*
 *GitHub: github.com/VanithaChalla/30-Day-SOC-Challenge*
