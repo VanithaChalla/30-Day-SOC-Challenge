@@ -1,7 +1,7 @@
 
 # Day 2 — OS Fingerprinting 🖥️
 
-## 📅 Date: March 22 2026
+## 📅 Date: March 24 2026
 ## 🎯 Category: Reconnaissance
 ## ⚠️ Severity: Medium
 ## 🕐 Duration: Multiple scans
